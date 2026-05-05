@@ -404,12 +404,14 @@ const updatePayroll = async (req, res) => {
 };
 
 // ======================= UPDATE PAYROLL STATUS (WITH EMAIL) =======================
+// Is function ko dhundo aur yeh lines add karo
 const updatePayrollStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { paymentStatus, paymentDate, transactionId, notes } = req.body;
     
-    // Get original payroll before update
+    console.log(`💰 Updating payroll ${id} status to: ${paymentStatus}`);
+    
     const originalPayroll = await Payroll.findById(id);
     
     if (!originalPayroll) {
@@ -426,19 +428,14 @@ const updatePayrollStatus = async (req, res) => {
     
     const payroll = await Payroll.findByIdAndUpdate(id, updateData, { new: true });
     
-    if (!payroll) {
-      return res.status(404).json({ success: false, error: 'Payroll not found' });
-    }
-    
     // 📧 Send email if status changed to 'Paid'
     let emailSent = false;
     let emailError = null;
     
     if (paymentStatus === 'Paid' && originalPayroll.paymentStatus !== 'Paid') {
-      console.log(`📧 Payroll ${id} marked as PAID. Preparing to send email...`);
+      console.log(`📧 Sending salary slip email for ${payroll.employeeName}...`);
       
       try {
-        // Get employee details - either from payroll.employeeId or use stored email
         let employee = null;
         let employeeEmail = payroll.employeeEmail;
         
@@ -446,7 +443,6 @@ const updatePayrollStatus = async (req, res) => {
           employee = await User.findById(payroll.employeeId);
         }
         
-        // If employee not found but we have stored email, create basic employee object
         if (!employee && employeeEmail) {
           employee = {
             name: payroll.employeeName,
@@ -455,28 +451,22 @@ const updatePayrollStatus = async (req, res) => {
             department: payroll.employeeDepartment,
             position: payroll.employeePosition
           };
-          console.log(`📧 Using stored employee data for email: ${employeeEmail}`);
         }
         
         if (employee && employee.email) {
-          console.log(`📧 Attempting to send email to: ${employee.email}`);
-          
           const pdfBuffer = await generatePayslipPDFBuffer(payroll, employee);
           const emailResult = await sendSalarySlipEmail(employee, payroll, pdfBuffer);
           
           if (emailResult.success) {
             emailSent = true;
-            console.log(`✅ Salary slip email sent successfully to ${employee.email}`);
-            await Payroll.findByIdAndUpdate(id, { 
-              emailSent: true, 
-              emailSentAt: new Date() 
-            });
+            console.log(`✅ Email sent to ${employee.email}`);
+            await Payroll.findByIdAndUpdate(id, { emailSent: true, emailSentAt: new Date() });
           } else {
             emailError = emailResult.error;
-            console.error(`❌ Failed to send email: ${emailError}`);
+            console.error(`❌ Email failed: ${emailError}`);
           }
         } else {
-          emailError = `Employee email not found for payroll ${id}. Stored email: ${employeeEmail}`;
+          emailError = `No email found for ${payroll.employeeName}`;
           console.error(`❌ ${emailError}`);
         }
       } catch (pdfError) {
@@ -497,6 +487,7 @@ const updatePayrollStatus = async (req, res) => {
         message: emailError || 'Email not sent (status not changed to Paid)'
       }
     });
+    
   } catch (error) {
     console.error('❌ updatePayrollStatus error:', error);
     res.status(500).json({ success: false, error: error.message });

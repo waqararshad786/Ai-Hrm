@@ -1,65 +1,28 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
 const { protect, authorize } = require('../utils/authMiddleware');
 const adminPayroll = require('../controllers/adminPayrollController');
+const employeePayroll = require('../controllers/employeePayrollController');
 
-// Configure multer for file upload
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    cb(null, `payroll_import_${Date.now()}${path.extname(file.originalname)}`);
-  }
-});
-
-const upload = multer({ 
-  storage, 
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['.xlsx', '.xls', '.csv'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedTypes.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only Excel and CSV files are allowed'));
-    }
-  }
-});
-
-// ✅ DEBUG MIDDLEWARE - Add this to see user role
+// Admin aur HR dono ko allow
 router.use(protect);
-router.use((req, res, next) => {
-  console.log(`🔍 [DEBUG] User role: ${req.user?.role}, SystemRole: ${req.user?.systemRole}`);
-  console.log(`🔍 [DEBUG] Request URL: ${req.method} ${req.originalUrl}`);
-  next();
-});
 router.use(authorize('hr', 'admin'));
 
-// Generation Routes
-router.post('/generate', adminPayroll.generatePayroll);
-router.post('/bulk-generate', adminPayroll.bulkGeneratePayroll);
+// HR/Admin ki apni salary (employee side se)
+router.get('/my-salary', employeePayroll.getMyDashboard);
+router.get('/my-payrolls', employeePayroll.getMyPayroll);
+router.get('/my-years', employeePayroll.getPayrollYears);
+router.get('/my-payslip/:id', employeePayroll.getMyPayslip);
+router.get('/my-payslip/:id/download', employeePayroll.downloadPayslip);
 
-// Fetch Routes
-router.get('/', adminPayroll.getAllPayroll);
+// Sab employees ki salaries (admin payroll se)
+router.get('/all-payrolls', adminPayroll.getAllPayroll);
 router.get('/stats', adminPayroll.getPayrollStats);
 router.get('/months-years', adminPayroll.getPayrollMonthsYears);
-router.get('/employees', adminPayroll.getEmployeesForPayroll);
-router.get('/payslip/:id', adminPayroll.generatePayslip);
-router.get('/:id', adminPayroll.getPayrollById);
+router.get('/employees-list', adminPayroll.getEmployeesForPayroll);
+router.get('/payslip-view/:id', adminPayroll.generatePayslip);
+router.get('/payslip-download/:id', adminPayroll.downloadPayslipFile);
 
-// Update Routes
-router.put('/:id', adminPayroll.updatePayroll);
-router.patch('/:id/status', adminPayroll.updatePayrollStatus);
-router.delete('/:id', adminPayroll.deletePayroll);
-
-// Excel Export/Import
-router.get('/export/excel', adminPayroll.exportToExcel);
-router.post('/import/excel', upload.single('file'), adminPayroll.importFromExcel);
-// Download payslip
-router.get('/payslip/:id/download', adminPayroll.downloadPayslipFile);
-// Bulk Payment
-router.post('/bulk-payment', adminPayroll.processBulkPayment);
+console.log('✅ HR Payroll Routes Loaded');
 
 module.exports = router;

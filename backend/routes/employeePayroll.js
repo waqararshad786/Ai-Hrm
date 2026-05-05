@@ -11,7 +11,7 @@ const {
 
 const { protect, authorize } = require('../utils/authMiddleware');
 
-// Apply middleware
+// ✅ HR, Admin, Employee sab ko allow
 router.use(protect);
 router.use(authorize('employee', 'hr', 'admin'));
 
@@ -22,5 +22,7 @@ router.get('/years', getPayrollYears);
 router.get('/payslip/:id', getMyPayslip);
 router.get('/payslip/:id/download', downloadPayslip);
 router.post('/:id/request-correction', requestCorrection);
+
+console.log('✅ Employee Payroll Routes Loaded (HR/Admin Access Enabled)');
 
 module.exports = router;

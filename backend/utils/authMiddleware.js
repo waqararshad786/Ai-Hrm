@@ -6,19 +6,24 @@ const protect = async (req, res, next) => {
   let token;
 
   try {
+    console.log('🔐 [PROTECT] Checking authentication...');
+    
     // 1. Check Authorization Header
     if (
       req.headers.authorization &&
       req.headers.authorization.startsWith('Bearer')
     ) {
       token = req.headers.authorization.split(' ')[1];
+      console.log('✅ Token found in Authorization header');
     }
     // 2. Check cookies (for web clients)
     else if (req.cookies?.token) {
       token = req.cookies.token;
+      console.log('✅ Token found in cookies');
     }
 
     if (!token) {
+      console.log('❌ No token provided');
       return res.status(401).json({
         success: false,
         error: 'Access denied. No token provided.',
@@ -27,11 +32,13 @@ const protect = async (req, res, next) => {
 
     // 3. Verify Token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    console.log('✅ Token verified for user ID:', decoded.id);
 
     // 4. Find User with additional checks
-    const user = await User.findById(decoded.id).select('-password');
+    const user = await User.findById(decoded.id).select('-password -passwordHistory -passwordResetToken');
 
     if (!user) {
+      console.log('❌ User not found in database');
       return res.status(401).json({
         success: false,
         error: 'User no longer exists.',
@@ -40,6 +47,7 @@ const protect = async (req, res, next) => {
 
     // 5. Check if user is active
     if (user.isActive === false) {
+      console.log('❌ Account is deactivated');
       return res.status(403).json({
         success: false,
         error: 'Account deactivated. Contact administrator.',
@@ -48,17 +56,25 @@ const protect = async (req, res, next) => {
 
     // 6. Attach user to request with full info
     req.user = {
+      _id: user._id,
       id: user._id,
       email: user.email,
       name: user.name,
-      role: user.role,
-      systemRole: user.systemRole,
+      role: user.role || user.systemRole || 'employee',
+      systemRole: user.systemRole || user.role || 'employee',
       isActive: user.isActive,
       profilePicture: user.profilePicture
     };
 
-    // 7. Update last login (optional)
-    await User.findByIdAndUpdate(user._id, { lastLogin: new Date() });
+    console.log('✅ User authenticated:', {
+      id: req.user._id,
+      role: req.user.role,
+      systemRole: req.user.systemRole,
+      email: req.user.email
+    });
+
+    // 7. Update last login (optional - remove if causing performance issues)
+    await User.findByIdAndUpdate(user._id, { lastLogin: new Date() }).catch(err => console.log('Last login update skipped:', err.message));
 
     next();
   } catch (err) {
@@ -93,7 +109,11 @@ const protect = async (req, res, next) => {
 // ================= AUTHORIZE MIDDLEWARE (Dynamic Roles) =================
 const authorize = (...allowedRoles) => {
   return (req, res, next) => {
+    console.log('🔐 [AUTHORIZE] Checking authorization...');
+    console.log('📋 Required roles:', allowedRoles);
+    
     if (!req.user) {
+      console.log('❌ No user object in request');
       return res.status(401).json({
         success: false,
         error: 'User not authenticated.',
@@ -105,17 +125,25 @@ const authorize = (...allowedRoles) => {
       ? allowedRoles[0] 
       : allowedRoles;
 
+    // Get user role (check both role and systemRole fields)
+    const userRole = req.user.role || req.user.systemRole;
+    
+    console.log('👤 User role:', userRole);
+    console.log('🔑 Required roles:', roles);
+    
     // Check if user has required role
-    const hasRole = roles.includes(req.user.role) || roles.includes(req.user.systemRole);
+    const hasRole = roles.includes(userRole);
     
     if (!hasRole) {
+      console.log(`❌ Access denied. User role: ${userRole}, Required: ${roles.join(', ')}`);
       return res.status(403).json({
         success: false,
-        error: `Access denied. Required roles: ${roles.join(', ')}. Your role: ${req.user.role || req.user.systemRole}`,
+        error: `Access denied. Required roles: ${roles.join(', ')}. Your role: ${userRole}`,
         code: 'INSUFFICIENT_PERMISSIONS'
       });
     }
 
+    console.log('✅ Authorization successful');
     next();
   };
 };
@@ -140,14 +168,16 @@ const optionalAuth = async (req, res, next) => {
       
       if (user && user.isActive) {
         req.user = {
+          _id: user._id,
           id: user._id,
           email: user.email,
           name: user.name,
-          role: user.role,
-          systemRole: user.systemRole,
+          role: user.role || user.systemRole || 'employee',
+          systemRole: user.systemRole || user.role || 'employee',
           isActive: user.isActive,
           profilePicture: user.profilePicture
         };
+        console.log('✅ Optional auth: User attached');
       }
     }
   } catch (err) {
@@ -158,8 +188,21 @@ const optionalAuth = async (req, res, next) => {
   next();
 };
 
+// ================= CHECK ROLE HELPER =================
+const checkRole = (req, role) => {
+  const userRole = req.user?.role || req.user?.systemRole;
+  return userRole === role;
+};
+
+const hasAnyRole = (req, roles) => {
+  const userRole = req.user?.role || req.user?.systemRole;
+  return roles.includes(userRole);
+};
+
 module.exports = {
   protect,
   authorize,
-  optionalAuth
+  optionalAuth,
+  checkRole,
+  hasAnyRole
 };

@@ -5,6 +5,7 @@ const path = require('path');
 const { protect, authorize } = require('../utils/authMiddleware');
 const adminPayroll = require('../controllers/adminPayrollController');
 
+// Configure multer for file upload
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'uploads/');
@@ -14,17 +15,28 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+const upload = multer({ 
+  storage, 
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['.xlsx', '.xls', '.csv'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only Excel and CSV files are allowed'));
+    }
+  }
+});
 
 // Debug middleware
+router.use(protect);
 router.use((req, res, next) => {
-  console.log(`📡 [${req.method}] ${req.originalUrl}`);
+  console.log(`🔍 [ADMIN PAYROLL] User: ${req.user?.email}, Role: ${req.user?.role}`);
   next();
 });
 
-// Auth middleware
-router.use(protect);
-router.use(authorize('admin', 'hr'));
+// ✅ HR KO ACCESS DENE KE LIYE 'hr' ADD KIYA
+router.use(authorize('admin', 'superadmin', 'hr'));
 
 // Routes
 router.post('/generate', adminPayroll.generatePayroll);
@@ -44,8 +56,8 @@ router.delete('/:id', adminPayroll.deletePayroll);
 router.post('/bulk-payment', adminPayroll.processBulkPayment);
 router.get('/export/excel', adminPayroll.exportToExcel);
 router.post('/import/excel', upload.single('file'), adminPayroll.importFromExcel);
-router.post('/:id/resend-email', adminPayroll.resendSalarySlipEmail);  // ✅ Add this line
+router.post('/:id/resend-email', adminPayroll.resendSalarySlipEmail);
 
-console.log('✅ Admin Payroll Routes Loaded');
+console.log('✅ Admin Payroll Routes Loaded (HR Access Enabled)');
 
 module.exports = router;

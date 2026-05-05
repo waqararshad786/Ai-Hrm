@@ -2,12 +2,100 @@ const Payroll = require('../models/Payroll');
 const Employee = require('../models/Employee');
 const mongoose = require('mongoose');
 
+// Helper function to generate payslip HTML
+const generatePayslipHTML = (payroll, employee) => {
+  const totalSalary = (payroll.salary || 0) + (payroll.fuelAllowance || 0) + 
+                      (payroll.medicalAllowance || 0) + (payroll.specialAllowance || 0) + 
+                      (payroll.otherAllowance || 0);
+  
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Payslip - ${payroll.employeeName || 'Employee'}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; padding: 40px; }
+        .payslip { max-width: 900px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; padding: 30px; text-align: center; }
+        .company-name { font-size: 28px; font-weight: bold; }
+        .section { padding: 30px; border-bottom: 1px solid #e2e8f0; }
+        .section-title { font-size: 18px; font-weight: bold; color: #1e3c72; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+        .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+        .info-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #cbd5e1; }
+        .label { font-weight: 600; color: #475569; }
+        .value { color: #1e293b; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f1f5f9; }
+        .amount { text-align: right; }
+        .total-row { background: #f1f5f9; font-weight: bold; }
+        .footer { padding: 20px; text-align: center; background: #f8fafc; font-size: 12px; color: #666; }
+        .status-paid { color: #10b981; font-weight: bold; }
+        .status-pending { color: #f59e0b; font-weight: bold; }
+        button { margin-top: 20px; padding: 10px 24px; background: #1e3c72; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        @media print { body { background: white; padding: 0; } button { display: none; } }
+      </style>
+    </head>
+    <body>
+      <div class="payslip">
+        <div class="header">
+          <div class="company-name">HRM SYSTEM</div>
+          <div style="margin-top: 10px;">MONTHLY PAYSLIP - ${payroll.month} ${payroll.year}</div>
+        </div>
+        <div class="section">
+          <div class="section-title">Employee Information</div>
+          <div class="info-grid">
+            <div class="info-item"><span class="label">Employee ID:</span><span class="value">${payroll.employeeCode || 'N/A'}</span></div>
+            <div class="info-item"><span class="label">Name:</span><span class="value">${payroll.employeeName || 'N/A'}</span></div>
+            <div class="info-item"><span class="label">Department:</span><span class="value">${payroll.employeeDepartment || 'N/A'}</span></div>
+            <div class="info-item"><span class="label">Position:</span><span class="value">${payroll.employeePosition || 'N/A'}</span></div>
+            <div class="info-item"><span class="label">Status:</span><span class="value ${payroll.paymentStatus === 'Paid' ? 'status-paid' : 'status-pending'}">${payroll.paymentStatus || 'Pending'}</span></div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-title">Salary Details</div>
+          <table>
+            <thead><tr><th>Description</th><th class="amount">Amount (PKR)</th></tr></thead>
+            <tbody>
+              <tr><td>Basic Salary</td><td class="amount">${(payroll.salary || 0).toLocaleString()}</td></tr>
+              <tr><td>Fuel Allowance</td><td class="amount">${(payroll.fuelAllowance || 0).toLocaleString()}</td></tr>
+              <tr><td>Medical Allowance</td><td class="amount">${(payroll.medicalAllowance || 0).toLocaleString()}</td></tr>
+              <tr><td>Special Allowance</td><td class="amount">${(payroll.specialAllowance || 0).toLocaleString()}</td></tr>
+              <tr><td>Other Allowance</td><td class="amount">${(payroll.otherAllowance || 0).toLocaleString()}</td></tr>
+              <tr class="total-row"><td><strong>TOTAL SALARY</strong></td><td class="amount"><strong>PKR ${totalSalary.toLocaleString()}</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="footer">
+          <div>Generated: ${new Date().toLocaleString()}</div>
+          <button onclick="window.print()">🖨️ Print Payslip</button>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+};
+
 // ======================= GET EMPLOYEE DASHBOARD =======================
 const getMyDashboard = async (req, res) => {
   try {
-    console.log('🔥 getMyDashboard called for user:', req.user._id);
+    console.log('🔥 getMyDashboard called');
+    console.log('📋 User object:', req.user);
+    
+    // ✅ FIX: Check if user exists
+    if (!req.user || !req.user._id) {
+      console.error('❌ No user found in request');
+      return res.status(401).json({ 
+        success: false, 
+        error: 'User not authenticated',
+        message: 'Please login again'
+      });
+    }
     
     const employeeId = req.user._id;
+    console.log('👤 Employee ID:', employeeId);
     
     // Get current month/year
     const currentDate = new Date();
@@ -21,7 +109,7 @@ const getMyDashboard = async (req, res) => {
       employeeId,
       month: currentMonth,
       year: currentYear
-    }).populate('employeeId', 'name email department position');
+    });
     
     console.log('📊 Current payroll found:', currentPayroll ? 'Yes' : 'No');
     
@@ -37,19 +125,7 @@ const getMyDashboard = async (req, res) => {
       {
         $group: {
           _id: null,
-          totalNetSalary: { $sum: '$netSalary' },
-          totalAllowances: { 
-            $sum: { 
-              $add: [
-                { $ifNull: ['$hra', 0] },
-                { $ifNull: ['$da', 0] },
-                { $ifNull: ['$conveyance', 0] },
-                { $ifNull: ['$medicalAllowance', 0] },
-                { $ifNull: ['$specialAllowance', 0] }
-              ]
-            }
-          },
-          totalDeductions: { $sum: '$totalDeductions' },
+          totalNetSalary: { $sum: { $add: ['$salary', '$fuelAllowance', '$medicalAllowance', '$specialAllowance', '$otherAllowance'] } },
           count: { $sum: 1 }
         }
       }
@@ -62,37 +138,32 @@ const getMyDashboard = async (req, res) => {
       employeeId,
       paymentStatus: 'Paid'
     })
-    .sort({ year: -1, month: -1 })
+    .sort({ year: -1, createdAt: -1 })
     .limit(5)
-    .select('month year netSalary paymentDate status paymentStatus createdAt')
     .lean();
     
     console.log('📋 Recent payrolls:', recentPayrolls.length);
+    
+    // Calculate totals for current payroll
+    const currentTotalSalary = currentPayroll ? 
+      (currentPayroll.salary || 0) + (currentPayroll.fuelAllowance || 0) + 
+      (currentPayroll.medicalAllowance || 0) + (currentPayroll.specialAllowance || 0) + 
+      (currentPayroll.otherAllowance || 0) : 0;
     
     // Transform current payroll for frontend
     const transformedCurrentPayroll = currentPayroll ? {
       month: currentPayroll.month,
       year: currentPayroll.year,
-      netSalary: currentPayroll.netSalary || 0,
-      basicSalary: currentPayroll.basicSalary || 0,
-      allowances: (currentPayroll.hra || 0) + (currentPayroll.da || 0) + 
-                  (currentPayroll.conveyance || 0) + (currentPayroll.medicalAllowance || 0) + 
-                  (currentPayroll.specialAllowance || 0),
+      netSalary: currentTotalSalary,
+      basicSalary: currentPayroll.salary || 0,
+      allowances: (currentPayroll.fuelAllowance || 0) + (currentPayroll.medicalAllowance || 0) + 
+                  (currentPayroll.specialAllowance || 0) + (currentPayroll.otherAllowance || 0),
       bonus: currentPayroll.specialAllowance || 0,
-      deductions: currentPayroll.totalDeductions || 0,
+      deductions: 0,
       status: currentPayroll.paymentStatus === 'Paid' ? 'Processed' : 
               currentPayroll.paymentStatus === 'Pending' ? 'Pending' : 'Generated',
       paymentDate: currentPayroll.paidAt || currentPayroll.createdAt
-    } : {
-      month: currentMonth,
-      year: currentYear,
-      netSalary: 0,
-      basicSalary: 0,
-      allowances: 0,
-      bonus: 0,
-      deductions: 0,
-      status: 'Pending'
-    };
+    } : null;
     
     res.json({
       success: true,
@@ -108,7 +179,8 @@ const getMyDashboard = async (req, res) => {
           _id: p._id,
           month: p.month,
           year: p.year,
-          netSalary: p.netSalary || 0,
+          netSalary: (p.salary || 0) + (p.fuelAllowance || 0) + (p.medicalAllowance || 0) + 
+                     (p.specialAllowance || 0) + (p.otherAllowance || 0),
           paymentDate: p.paidAt || p.createdAt,
           status: p.paymentStatus === 'Paid' ? 'Processed' : 'Pending'
         }))
@@ -119,8 +191,7 @@ const getMyDashboard = async (req, res) => {
     console.error('❌ getMyDashboard error:', error);
     res.status(500).json({ 
       success: false, 
-      error: error.message,
-      message: 'Failed to load dashboard'
+      error: error.message 
     });
   }
 };
@@ -130,6 +201,14 @@ const getMyPayroll = async (req, res) => {
   try {
     console.log('🔥 getMyPayroll called');
     console.log('📋 Query params:', req.query);
+    
+    // ✅ FIX: Check if user exists
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'User not authenticated' 
+      });
+    }
     
     const { year } = req.query;
     const employeeId = req.user._id;
@@ -145,27 +224,26 @@ const getMyPayroll = async (req, res) => {
       employeeId,
       year: parseInt(year)
     })
-    .populate('employeeId', 'name employeeId department position')
-    .sort({ year: -1, month: -1 })
+    .sort({ year: -1, createdAt: -1 })
     .lean();
     
     console.log('📊 Found payrolls:', payrolls.length);
     
     // Transform data for frontend
     const transformedPayrolls = payrolls.map(payroll => {
-      const allowances = (payroll.hra || 0) + (payroll.da || 0) + 
-                        (payroll.conveyance || 0) + (payroll.medicalAllowance || 0) + 
-                        (payroll.specialAllowance || 0);
+      const allowances = (payroll.fuelAllowance || 0) + (payroll.medicalAllowance || 0) + 
+                        (payroll.specialAllowance || 0) + (payroll.otherAllowance || 0);
+      const totalSalary = (payroll.salary || 0) + allowances;
       
       return {
         _id: payroll._id,
         month: payroll.month,
         year: payroll.year,
-        basicSalary: payroll.basicSalary || 0,
+        basicSalary: payroll.salary || 0,
         allowances: allowances,
         bonus: payroll.specialAllowance || 0,
-        deductions: payroll.totalDeductions || 0,
-        netSalary: payroll.netSalary || 0,
+        deductions: 0,
+        netSalary: totalSalary,
         status: payroll.paymentStatus === 'Paid' ? 'Processed' : 
                 payroll.paymentStatus === 'Pending' ? 'Pending' : 'Generated',
         paymentDate: payroll.paidAt || payroll.createdAt,
@@ -192,6 +270,14 @@ const getMyPayroll = async (req, res) => {
 const getPayrollYears = async (req, res) => {
   try {
     console.log('🔥 getPayrollYears called');
+    
+    // ✅ FIX: Check if user exists
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'User not authenticated' 
+      });
+    }
     
     const employeeId = req.user._id;
     
@@ -239,19 +325,20 @@ const getMyPayslip = async (req, res) => {
   try {
     console.log('🔥 getMyPayslip called for ID:', req.params.id);
     
+    if (!req.user || !req.user._id) {
+      return res.status(401).send('User not authenticated');
+    }
+    
     const { id } = req.params;
     const employeeId = req.user._id;
     
     const payroll = await Payroll.findOne({
       _id: id,
       employeeId
-    }).populate('employeeId', 'name email employeeId department position joinDate');
+    });
     
     if (!payroll) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Payslip not found or access denied' 
-      });
+      return res.status(404).send('Payslip not found or access denied');
     }
     
     // Generate HTML payslip
@@ -262,10 +349,7 @@ const getMyPayslip = async (req, res) => {
     
   } catch (error) {
     console.error('❌ getMyPayslip error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(500).send('Error generating payslip');
   }
 };
 
@@ -274,19 +358,20 @@ const downloadPayslip = async (req, res) => {
   try {
     console.log('🔥 downloadPayslip called for ID:', req.params.id);
     
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+    
     const { id } = req.params;
     const employeeId = req.user._id;
     
     const payroll = await Payroll.findOne({
       _id: id,
       employeeId
-    }).populate('employeeId', 'name email employeeId department position');
+    });
     
     if (!payroll) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Payslip not found or access denied' 
-      });
+      return res.status(404).json({ success: false, error: 'Payslip not found' });
     }
     
     const payslipHTML = generatePayslipHTML(payroll);
@@ -297,10 +382,7 @@ const downloadPayslip = async (req, res) => {
     
   } catch (error) {
     console.error('❌ downloadPayslip error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -308,6 +390,10 @@ const downloadPayslip = async (req, res) => {
 const requestCorrection = async (req, res) => {
   try {
     console.log('🔥 requestCorrection called for ID:', req.params.id);
+    
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
     
     const { id } = req.params;
     const { issue, details } = req.body;
@@ -319,10 +405,7 @@ const requestCorrection = async (req, res) => {
     });
     
     if (!payroll) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Payroll not found' 
-      });
+      return res.status(404).json({ success: false, error: 'Payroll not found' });
     }
     
     // Add correction request
@@ -331,105 +414,24 @@ const requestCorrection = async (req, res) => {
     }
     
     payroll.correctionRequests.push({
-      issue,
-      details,
+      issue: issue || 'Salary Discrepancy',
+      details: details || 'No details provided',
       requestedBy: employeeId,
       requestedAt: new Date(),
       status: 'Pending'
     });
     
-    payroll.status = 'Under Review';
     await payroll.save();
     
     res.json({
       success: true,
-      message: 'Correction request submitted successfully',
-      data: payroll
+      message: 'Correction request submitted successfully'
     });
     
   } catch (error) {
     console.error('❌ requestCorrection error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
-};
-
-// ======================= HELPER: GENERATE PAYSLIP HTML =======================
-const generatePayslipHTML = (payroll) => {
-  const allowancesTotal = (payroll.hra || 0) + (payroll.da || 0) + 
-                         (payroll.conveyance || 0) + (payroll.medicalAllowance || 0) + 
-                         (payroll.specialAllowance || 0);
-  
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <title>Payslip - ${payroll.employeeId.name}</title>
-      <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        .header { text-align: center; margin-bottom: 30px; }
-        .company-name { font-size: 24px; font-weight: bold; color: #2c3e50; }
-        .details { margin: 20px 0; }
-        .details table { width: 100%; border-collapse: collapse; }
-        .details th, .details td { padding: 12px; border: 1px solid #ddd; text-align: left; }
-        .details th { background-color: #3498db; color: white; }
-        .total { font-weight: bold; background-color: #ecf0f1; }
-        .amount { text-align: right; }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <div class="company-name">HRM SYSTEM</div>
-        <div>Monthly Payslip - ${payroll.month} ${payroll.year}</div>
-      </div>
-      
-      <div class="details">
-        <h3>Employee Details</h3>
-        <table>
-          <tr><th>Employee ID:</th><td>${payroll.employeeId.employeeId || 'N/A'}</td></tr>
-          <tr><th>Name:</th><td>${payroll.employeeId.name}</td></tr>
-          <tr><th>Department:</th><td>${payroll.employeeId.department || 'N/A'}</td></tr>
-          <tr><th>Position:</th><td>${payroll.employeeId.position || 'N/A'}</td></tr>
-          <tr><th>Payment Status:</th><td>${payroll.paymentStatus}</td></tr>
-        </table>
-      </div>
-      
-      <div class="details">
-        <h3>Earnings</h3>
-        <table>
-          <tr><th>Description</th><th class="amount">Amount (PKR)</th></tr>
-          <tr><td>Basic Salary</td><td class="amount">${(payroll.basicSalary || 0).toLocaleString()}</td></tr>
-          <tr><td>House Rent Allowance</td><td class="amount">${(payroll.hra || 0).toLocaleString()}</td></tr>
-          <tr><td>Dearness Allowance</td><td class="amount">${(payroll.da || 0).toLocaleString()}</td></tr>
-          <tr><td>Conveyance Allowance</td><td class="amount">${(payroll.conveyance || 0).toLocaleString()}</td></tr>
-          <tr><td>Medical Allowance</td><td class="amount">${(payroll.medicalAllowance || 0).toLocaleString()}</td></tr>
-          <tr><td>Special Allowance</td><td class="amount">${(payroll.specialAllowance || 0).toLocaleString()}</td></tr>
-          <tr class="total"><td>Total Earnings</td><td class="amount">${(payroll.grossSalary || 0).toLocaleString()}</td></tr>
-        </table>
-      </div>
-      
-      <div class="details">
-        <h3>Deductions</h3>
-        <table>
-          <tr><th>Description</th><th class="amount">Amount (PKR)</th></tr>
-          <tr><td>Tax Deducted at Source</td><td class="amount">${(payroll.tds || 0).toLocaleString()}</td></tr>
-          <tr><td>Provident Fund</td><td class="amount">${(payroll.pf || 0).toLocaleString()}</td></tr>
-          <tr><td>Professional Tax</td><td class="amount">${(payroll.professionalTax || 0).toLocaleString()}</td></tr>
-          <tr class="total"><td>Total Deductions</td><td class="amount">${(payroll.totalDeductions || 0).toLocaleString()}</td></tr>
-        </table>
-      </div>
-      
-      <div class="details">
-        <table>
-          <tr class="total"><td><strong>NET SALARY</strong></td><td class="amount"><strong>PKR ${(payroll.netSalary || 0).toLocaleString()}</strong></td></tr>
-        </table>
-      </div>
-    </body>
-    </html>
-  `;
 };
 
 module.exports = {
